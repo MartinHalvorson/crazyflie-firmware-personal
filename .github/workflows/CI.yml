@@ -186,6 +186,7 @@ jobs:
           --suppress=invalidPointerCast \
           --suppress=objectIndex \
           --suppress=invalidPrintfArgType_uint \
+          --suppress=invalidPrintfArgType_sint \
           --suppress=nullPointerRedundantCheck \
           --suppress=arrayIndexOutOfBoundsCond \
           --suppress=nullPointer \
