@@ -137,3 +137,40 @@ jobs:
 
     - name: build
       run: docker run --rm -v ${PWD}:/module bitcraze/builder bash -c "KCONFIG_ALLCONFIG=configs/all.config make ${TARGET} &&  ./tools/build/build UNIT_TEST_STYLE=min"
+
+  static-analysis:
+    runs-on: ubuntu-latest
+    # Run after basic_build to ensure the codebase is clean first.
+    needs: basic_build
+
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Install cppcheck
+      run: sudo apt-get install -y cppcheck
+
+    - name: Run cppcheck
+      # Analyze the application source tree. Suppressed findings:
+      #   missingIncludeSystem - vendor/STM32 headers not on the host include path
+      #   unusedFunction       - many module init/test functions are called via
+      #                          function pointer tables and appear unused to cppcheck
+      # --error-exitcode=1 fails the job on any finding not suppressed above.
+      run: |
+        cppcheck \
+          --error-exitcode=1 \
+          --force \
+          --inline-suppr \
+          --suppress=missingIncludeSystem \
+          --suppress=unusedFunction \
+          --enable=warning,performance,portability \
+          -I src/modules/interface \
+          -I src/hal/interface \
+          -I src/drivers/interface \
+          -I src/utils/interface \
+          -I src/config \
+          src/modules/src \
+          src/hal/src \
+          src/utils/src
