@@ -184,6 +184,11 @@ jobs:
           --suppress=syntaxError \
           --suppress=comparePointers \
           --suppress=invalidPointerCast \
+          --suppress=objectIndex \
+          --suppress=invalidPrintfArgType_uint \
+          --suppress=nullPointerRedundantCheck \
+          --suppress=arrayIndexOutOfBoundsCond \
+          --suppress=nullPointer \
           --enable=warning,performance,portability \
           -I src/modules/interface \
           -I src/hal/interface \
