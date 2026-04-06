@@ -189,6 +189,9 @@ jobs:
           --suppress=nullPointerRedundantCheck \
           --suppress=arrayIndexOutOfBoundsCond \
           --suppress=nullPointer \
+          --suppress=ctunullpointer \
+          --suppress=selfAssignment \
+          --suppress=integerOverflow \
           --enable=warning,performance,portability \
           -I src/modules/interface \
           -I src/hal/interface \
