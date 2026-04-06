@@ -113,6 +113,39 @@ bool controllerMellingerTest(controllerMellinger_t* self)
   return true;
 }
 
+/**
+ * Geometric controller on SE(3) following Mellinger & Kumar, ICRA 2011.
+ *
+ * High-level structure (runs at ATTITUDE_RATE, default 500 Hz):
+ *
+ * 1. POSITION LOOP — PID on position/velocity error in world frame:
+ *      F_des = m·(a_ff + kp·ep + kd·ev + ki·∫ep dt) + m·g·e3
+ *    where ep = pos_des - pos, ev = vel_des - vel.
+ *    F_des is the desired total force vector in world frame.
+ *
+ * 2. DESIRED ATTITUDE — derived from F_des and desired yaw:
+ *      z_des = F_des / |F_des|          (desired body z-axis = thrust direction)
+ *      x_c   = [cos(ψ), sin(ψ), 0]'    (yaw-constrained reference x)
+ *      y_des = normalize(z_des × x_c)
+ *      x_des = y_des × z_des
+ *    This is the "body-frame construction" that decouples thrust from yaw.
+ *
+ * 3. ATTITUDE ERROR on SO(3) — the rotation error is computed as:
+ *      eR = (1/2) * vee(R_des'·R - R'·R_des)
+ *    where vee(·) extracts the 3-vector from a skew-symmetric matrix.
+ *    eR lives in the Lie algebra so(3), not Euler angles. This avoids
+ *    gimbal lock and wrapping issues.
+ *    The code uses a Mathematica-generated closed form (lines below) that
+ *    computes eR directly from quaternion components and the desired axes,
+ *    avoiding explicit R_des matrix construction (~50 scalar ops vs. ~200).
+ *
+ * 4. MOMENT LAW — PID on attitude error eR and angular velocity error eω:
+ *      M = -kR·eR + kω·eω + ki_m·∫(-eR) dt + kd_ω·d(eω)/dt
+ *
+ * Outputs: control->thrust (total thrust), control->roll/pitch/yaw (moments).
+ * Time complexity: O(1) — fixed 3D vector/quaternion arithmetic, no matrix ops.
+ * Transcendentals per call: sinf, cosf (yaw), sqrtf×2 (normalizations).
+ */
 void controllerMellinger(controllerMellinger_t* self, control_t *control, const setpoint_t *setpoint,
                                          const sensorData_t *sensors,
                                          const state_t *state,
