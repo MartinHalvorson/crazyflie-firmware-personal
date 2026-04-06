@@ -29,10 +29,10 @@
 void kalmanCoreUpdateWithSweepAngles(kalmanCoreData_t *this, sweepAngleMeasurement_t *sweepInfo, const uint32_t nowMs, OutlierFilterLhState_t* sweepOutlierFilterState) {
   // Rotate the sensor position from CF reference frame to global reference frame,
   // using the CF roatation matrix
-  // cppcheck-suppress uninitvar -- s is an output buffer written by mat_mult via the matrix instance wrapper
   vec3d s;
   arm_matrix_instance_f32 Rcf_ = {3, 3, (float32_t *)this->R};
   arm_matrix_instance_f32 scf_ = {3, 1, (float32_t *)*sweepInfo->sensorPos};
+  // cppcheck-suppress uninitvar -- s is an output buffer; mat_mult writes into it through this wrapper
   arm_matrix_instance_f32 s_ = {3, 1, s};
   mat_mult(&Rcf_, &scf_, &s_);
 
@@ -46,9 +46,9 @@ void kalmanCoreUpdateWithSweepAngles(kalmanCoreData_t *this, sweepAngleMeasureme
 
   // Rotate the difference in position to the rotor reference frame,
   // using the rotor inverse rotation matrix
-  // cppcheck-suppress uninitvar -- sr is an output buffer written by mat_mult via the matrix instance wrapper
   vec3d sr;
   arm_matrix_instance_f32 Rr_inv_ = {3, 3, (float32_t *)(*sweepInfo->rotorRotInv)};
+  // cppcheck-suppress uninitvar -- sr is an output buffer; mat_mult writes into it through this wrapper
   arm_matrix_instance_f32 sr_ = {3, 1, sr};
   mat_mult(&Rr_inv_, &stmp_, &sr_);
 
@@ -77,10 +77,10 @@ void kalmanCoreUpdateWithSweepAngles(kalmanCoreData_t *this, sweepAngleMeasureme
 
       // gr is in the rotor reference frame, rotate back to the global
       // reference frame using the rotor rotation matrix
-      // cppcheck-suppress uninitvar -- g is an output buffer written by mat_mult via the matrix instance wrapper
       vec3d g;
       arm_matrix_instance_f32 gr_ = {3, 1, gr};
       arm_matrix_instance_f32 Rr_ = {3, 3, (float32_t *)(*sweepInfo->rotorRot)};
+      // cppcheck-suppress uninitvar -- g is an output buffer; mat_mult writes into it through this wrapper
       arm_matrix_instance_f32 g_ = {3, 1, g};
       mat_mult(&Rr_, &gr_, &g_);
 
