@@ -142,6 +142,55 @@ bool controllerINDITest(void)
 	return pass;
 }
 
+/**
+ * Incremental Nonlinear Dynamic Inversion (INDI) attitude controller.
+ * Based on: Smeur et al., "Adaptive Incremental Nonlinear Dynamic Inversion for
+ * Attitude Control of Micro Aerial Vehicles", J. Guidance Control Dynamics, 2016.
+ * http://arc.aiaa.org/doi/pdf/10.2514/1.G001490
+ *
+ * Core idea: instead of inverting a full aerodynamic model (which is uncertain),
+ * measure the actual angular acceleration from filtered gyroscope data and only
+ * compute the *increment* needed to correct the remaining error.
+ *
+ * Algorithm each step (ATTITUDE_RATE, default 500 Hz):
+ *
+ * 1. OUTER LOOP (position → desired attitude angles):
+ *      attitude_des = P_att · (pos_des - pos)    or from INDI position loop
+ *
+ * 2. RATE REFERENCE (attitude error → desired angular rate):
+ *      rate_ref = err_p · (roll_des - roll),  similarly for pitch and yaw
+ *
+ * 3. FILTER GYROSCOPE (2nd-order Butterworth low-pass, cutoff ~20 Hz):
+ *      Ω_f[k] = butterworth(gyro[k])
+ *    This smooths the gyro signal before differentiation.
+ *
+ * 4. ANGULAR ACCELERATION (finite difference of filtered signal):
+ *      α_meas = (Ω_f[k] - Ω_f[k-1]) · ATTITUDE_RATE
+ *
+ * 5. ANGULAR ACCELERATION REFERENCE:
+ *      α_ref = rate_p · (rate_ref - Ω_raw)
+ *    Uses raw (unfiltered) gyro for rate error to minimize lag.
+ *
+ * 6. INVERSION — compute control increment:
+ *      Δu_p = (α_ref_p - α_meas_p) / G1_p
+ *      Δu_q = (α_ref_q - α_meas_q) / G1_q
+ *      Δu_r = (α_ref_r - α_meas_r - G2·Δu_r_prev) / (G1_r + G2)
+ *    G1 [rad/s²/unit] is control effectiveness (how much α per motor command unit).
+ *    G2 accounts for propeller inertia coupling into yaw acceleration.
+ *
+ * 7. INCREMENT TO TOTAL COMMAND:
+ *      u_in = u_filtered_prev + Δu     (add increment to last filtered output)
+ *
+ * 8. FIRST-ORDER ACTUATOR DYNAMICS (models motor lag):
+ *      u_act[k] = u_act[k-1] + act_dyn · (u_in - u_act[k-1])
+ *
+ * Key advantage over PID: robustness to model uncertainty. INDI only needs
+ * G1/G2 (effectiveness), not the full aerodynamic model. Effectiveness can
+ * be identified online.
+ *
+ * Time complexity: O(1) — 6 IIR filter updates + scalar arithmetic.
+ * No transcendentals, no matrix operations.
+ */
 void controllerINDI(control_t *control, const setpoint_t *setpoint,
 	const sensorData_t *sensors,
 	const state_t *state,
