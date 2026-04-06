@@ -281,6 +281,8 @@ struct traj_eval traj_eval_invalid()
 {
 	struct traj_eval ev;
 	ev.pos = vrepeat(NAN);
+	// cppcheck-suppress uninitvar -- intentional: only ev.pos is set as an invalid sentinel.
+	// Callers must check is_traj_eval_valid() before accessing other fields.
 	return ev;
 }
 

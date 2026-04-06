@@ -383,6 +383,7 @@ static inline struct mat33 mrows(struct vec a, struct vec b, struct vec c) {
 	vstoref(a, m.m[0]);
 	vstoref(b, m.m[1]);
 	vstoref(c, m.m[2]);
+	// cppcheck-suppress uninitvar -- all fields of m are written by vstoref above; cppcheck cannot trace through vstoref
 	return m;
 }
 // construct the matrix A from vector v such that Ax = cross(v, x)
