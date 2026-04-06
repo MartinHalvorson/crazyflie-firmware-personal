@@ -212,6 +212,28 @@ void kalmanCoreInit(kalmanCoreData_t *this, const kalmanCoreParams_t *params, co
   this->lastProcessNoiseUpdateMs = nowMs;
 }
 
+/**
+ * Incorporate a single scalar measurement into the filter state and covariance.
+ *
+ * All external measurements (barometer, ToF, optical flow, TDOA, lighthouse)
+ * reduce to this scalar case: one observation z with linear model z = H·S + noise.
+ *
+ * Math (n = KC_STATE_DIM = 9):
+ *
+ *   Innovation:           e  = z - H·S          (provided as 'error' argument)
+ *   Innovation covariance: s  = H·P·H' + R       (scalar since H is 1×n)
+ *   Kalman gain:           K  = P·H' / s          (n×1 vector)
+ *   State update:          S  ← S + K·e
+ *   Covariance update (Joseph form, numerically stable):
+ *                          P  ← (I - K·H)·P·(I - K·H)' + K·R·K'
+ *
+ * The Joseph form is used instead of the cheaper P ← (I-KH)·P because it
+ * guarantees positive-semidefiniteness even when K deviates from optimal due
+ * to floating-point error. This matters on a vehicle that cannot be rebooted.
+ *
+ * Time complexity:  O(n³) — dominated by two n×n matrix multiplications.
+ * Space complexity: O(n²) — static scratch matrices, never heap-allocated.
+ */
 void kalmanCoreScalarUpdate(kalmanCoreData_t* this, arm_matrix_instance_f32 *Hm, float error, float stdMeasNoise)
 {
   // The Kalman gain as a column vector
@@ -337,6 +359,41 @@ void kalmanCoreUpdateWithBaro(kalmanCoreData_t *this, const kalmanCoreParams_t *
   kalmanCoreScalarUpdate(this, &H, meas - this->S[KC_STATE_Z], params->measNoiseBaro);
 }
 
+/**
+ * Propagate state and covariance forward by one IMU time step dt.
+ *
+ * State vector (n=9):
+ *   S = [ x,  y,  z  ]  position in world frame [m]
+ *       [ px, py, pz ]  velocity in BODY frame [m/s]
+ *       [ d0, d1, d2 ]  attitude error as Rodrigues params [rad]
+ *
+ * Attitude is stored separately as quaternion q and rotation matrix R = quat2rot(q).
+ * Only the *error* d lives in S. After each update cycle, d is folded into q
+ * (see kalmanCoreFinalize) and reset to zero, so d ≈ 0 at prediction time.
+ * This error-state formulation (Mueller et al. ICRA 2015) lets us run a standard
+ * linear Kalman filter on a state that lives on a nonlinear manifold (SO(3)).
+ *
+ * Linearized dynamics (Euler forward, continuous → discrete):
+ *   S_{k+1} = A·S_k + B·u_k + noise
+ *
+ * where A is the 9×9 Jacobian of the dynamics, built sparse below.
+ * Key couplings in A:
+ *   - position ← body-frame velocity (via R, to rotate body→world)
+ *   - position ← attitude error (velocity cross-coupled by R)
+ *   - velocity ← attitude error (gravity projected by R)
+ *   - attitude ← attitude (second-order gyro rotation, from covariance correction paper)
+ *
+ * Covariance propagation:
+ *   P_{k+1|k} = A·P_{k|k}·A'    (process noise Q added separately in addProcessNoiseDt)
+ *
+ * State prediction uses the nonlinear dynamics directly (not the linearized A):
+ *   - Position: world-frame Euler integration of body-frame velocity via R
+ *   - Velocity: body-frame integration of accel, gyro cross-products, gravity, drag
+ *   - Attitude: exact quaternion multiplication by dq = exp(ω·dt/2) — NOT linearized
+ *
+ * Time complexity:  O(n³) — two n×n matrix multiplications (A·P and AP·A').
+ * Space complexity: O(n²) — static A and two scratch matrices.
+ */
 static void predictDt(kalmanCoreData_t* this, const kalmanCoreParams_t *params, Axis3f *acc, Axis3f *gyro, float dt, bool quadIsFlying)
 {
   /* Here we discretize (euler forward) and linearise the quadrocopter dynamics in order
