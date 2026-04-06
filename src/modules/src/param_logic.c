@@ -688,7 +688,7 @@ static void generateStorageKey(const uint16_t index, char key[KEY_LEN])
   paramVarId_t paramId;
 
   paramId.index = (uint16_t)index;
-  // cppcheck-suppress uninitvar,uninitStructMember -- paramId is a union; only .index is used by paramGetGroupAndName
+  // cppcheck-suppress uninitvar -- paramId is a union; only .index is used by paramGetGroupAndName
   paramGetGroupAndName(paramId, &group, &name);
 
   // Assemble key string, e.g. "prm/pid_rate.kp"
