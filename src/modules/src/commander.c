@@ -53,6 +53,12 @@ STATIC_MEM_QUEUE_ALLOC(setpointQueue, 1, sizeof(setpoint_t));
 static QueueHandle_t priorityQueue;
 STATIC_MEM_QUEUE_ALLOC(priorityQueue, 1, sizeof(int));
 
+// Mutex protecting the read-check-write sequence in commanderSetSetpoint.
+// Without this, two concurrent callers can both observe the same currentPriority
+// and both proceed to overwrite, with the lower-priority caller winning if it
+// writes last. The mutex makes the peek+overwrite pair atomic.
+static SemaphoreHandle_t setpointMutex;
+
 /* Public functions */
 void commanderInit(void)
 {
@@ -64,6 +70,9 @@ void commanderInit(void)
   ASSERT(priorityQueue);
   xQueueSend(priorityQueue, &priorityDisable, 0);
 
+  setpointMutex = xSemaphoreCreateMutex();
+  ASSERT(setpointMutex);
+
   crtpCommanderInit();
   crtpCommanderHighLevelInit();
   lastUpdate = xTaskGetTickCount();
@@ -74,19 +83,31 @@ void commanderInit(void)
 void commanderSetSetpoint(setpoint_t *setpoint, int priority)
 {
   int currentPriority;
+  bool accepted = false;
+
+  // Hold the mutex for the duration of the read-check-write so that two
+  // concurrent callers cannot both observe the same currentPriority and both
+  // proceed to overwrite (which would let a lower-priority source win by
+  // writing last).
+  xSemaphoreTake(setpointMutex, portMAX_DELAY);
 
   const BaseType_t peekResult = xQueuePeek(priorityQueue, &currentPriority, 0);
   ASSERT(peekResult == pdTRUE);
 
   if (priority >= currentPriority) {
     setpoint->timestamp = xTaskGetTickCount();
-    // This is a potential race but without effect on functionality
     xQueueOverwrite(setpointQueue, setpoint);
     xQueueOverwrite(priorityQueue, &priority);
-    if (priority > COMMANDER_PRIORITY_HIGHLEVEL) {
-      // Stop the high-level planner so it will forget its current state
-      crtpCommanderHighLevelStop();
-    }
+    accepted = true;
+  }
+
+  xSemaphoreGive(setpointMutex);
+
+  // Called outside the mutex: crtpCommanderHighLevelStop() may yield/block,
+  // and holding the mutex across that would cause priority inversion.
+  if (accepted && priority > COMMANDER_PRIORITY_HIGHLEVEL) {
+    // Stop the high-level planner so it will forget its current state
+    crtpCommanderHighLevelStop();
   }
 }
 
